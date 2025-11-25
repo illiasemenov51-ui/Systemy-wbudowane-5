@@ -1,0 +1,175 @@
+// Sygnalizacja świetlna bez delay()
+
+// Definicje pinów dla diod LED
+#define RED_CAR 2      // Czerwona dioda dla samochodów
+#define YELLOW_CAR 3   // Żółta dioda dla samochodów  
+#define GREEN_CAR 4    // Zielona dioda dla samochodów
+#define RED_PED 5      // Czerwona dioda dla pieszych
+#define GREEN_PED 6    // Zielona dioda dla pieszych
+
+// Definicje stanów sygnalizacji
+enum TrafficState {
+  CAR_GREEN,        // Zielone dla samochodów, czerwone dla pieszych
+  CAR_YELLOW,       // Żółte dla samochodów, czerwone dla pieszych
+  CAR_RED_PED_GREEN, // Czerwone dla samochodów, zielone dla pieszych
+  CAR_RED_PED_BLINK, // Czerwone dla samochodów, migające zielone dla pieszych
+  CAR_RED_PED_RED,  // Czerwone dla samochodów i pieszych (przejście)
+  CAR_RED_YELLOW    // Czerwone+żółte dla samochodów, czerwone dla pieszych (przygotowanie)
+};
+
+// Zmienne globalne
+TrafficState currentState = CAR_GREEN;  // Aktualny stan sygnalizacji
+unsigned long previousMillis = 0;       // Poprzedni czas pomiaru
+unsigned long blinkPreviousMillis = 0;  // Poprzedni czas dla migania
+bool blinkState = false;                // Stan migania (true/false)
+
+// Czasy trwania każdego stanu (w milisekundach)
+const unsigned long CAR_GREEN_TIME = 8000;     // 8 sekund zielone dla samochodów
+const unsigned long CAR_YELLOW_TIME = 2000;    // 2 sekundy żółte dla samochodów
+const unsigned long PED_GREEN_TIME = 6000;     // 6 sekund zielone dla pieszych
+const unsigned long PED_BLINK_TIME = 4000;     // 4 sekundy miganie dla pieszych
+const unsigned long ALL_RED_TIME = 1000;       // 1 sekunda wszystkie czerwone
+const unsigned long RED_YELLOW_TIME = 2000;    // 2 sekundy czerwone+żółte dla samochodów
+const unsigned long BLINK_INTERVAL = 500;      // Interwał migania (500ms)
+
+void setup() {
+  // Inicjalizacja pinów jako wyjścia
+  pinMode(RED_CAR, OUTPUT);
+  pinMode(YELLOW_CAR, OUTPUT);
+  pinMode(GREEN_CAR, OUTPUT);
+  pinMode(RED_PED, OUTPUT);
+  pinMode(GREEN_PED, OUTPUT);
+  
+  // Inicjalizacja komunikacji szeregowej do debugowania
+  Serial.begin(9600);
+  Serial.println("Sygnalizacja świetlna uruchomiona");
+  
+  // Ustawienie początkowego stanu
+  setTrafficLights();
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+  
+  // Główna maszyna stanów - obsługa przejść między stanami
+  switch(currentState) {
+    case CAR_GREEN:
+      // Stan: zielone dla samochodów, czerwone dla pieszych
+      if (currentMillis - previousMillis >= CAR_GREEN_TIME) {
+        currentState = CAR_YELLOW;
+        previousMillis = currentMillis;
+        Serial.println("Przejście: Samochody - ŻÓŁTE");
+      }
+      break;
+      
+    case CAR_YELLOW:
+      // Stan: żółte dla samochodów, czerwone dla pieszych
+      if (currentMillis - previousMillis >= CAR_YELLOW_TIME) {
+        currentState = CAR_RED_PED_GREEN;
+        previousMillis = currentMillis;
+        Serial.println("Przejście: Piesi - ZIELONE");
+      }
+      break;
+      
+    case CAR_RED_PED_GREEN:
+      // Stan: czerwone dla samochodów, zielone dla pieszych
+      if (currentMillis - previousMillis >= PED_GREEN_TIME) {
+        currentState = CAR_RED_PED_BLINK;
+        previousMillis = currentMillis;
+        blinkPreviousMillis = currentMillis;
+        Serial.println("Przejście: Piesi - MIGANIE");
+      }
+      break;
+      
+    case CAR_RED_PED_BLINK:
+      // Stan: czerwone dla samochodów, migające zielone dla pieszych
+      handleBlinking(currentMillis);
+      if (currentMillis - previousMillis >= PED_BLINK_TIME) {
+        currentState = CAR_RED_PED_RED;
+        previousMillis = currentMillis;
+        Serial.println("Przejście: Wszyscy - CZERWONE");
+      }
+      break;
+      
+    case CAR_RED_PED_RED:
+      // Stan: czerwone dla wszystkich (bezpieczne przejście)
+      if (currentMillis - previousMillis >= ALL_RED_TIME) {
+        currentState = CAR_RED_YELLOW;
+        previousMillis = currentMillis;
+        Serial.println("Przejście: Samochody - CZERWONE+ŻÓŁTE");
+      }
+      break;
+      
+    case CAR_RED_YELLOW:
+      // Stan: czerwone+żółte dla samochodów, czerwone dla pieszych (przygotowanie)
+      if (currentMillis - previousMillis >= RED_YELLOW_TIME) {
+        currentState = CAR_GREEN;
+        previousMillis = currentMillis;
+        Serial.println("Przejście: Samochody - ZIELONE");
+      }
+      break;
+  }
+  
+  // Aktualizacja stanu diod LED
+  setTrafficLights();
+}
+
+// Funkcja obsługująca miganie zielonej diody dla pieszych
+void handleBlinking(unsigned long currentMillis) {
+  if (currentMillis - blinkPreviousMillis >= BLINK_INTERVAL) {
+    blinkState = !blinkState;  // Zmiana stanu migania
+    blinkPreviousMillis = currentMillis;
+  }
+}
+
+// Funkcja ustawiająca stan wszystkich diod LED
+void setTrafficLights() {
+  // Wyłączenie wszystkich diod przed ustawieniem nowego stanu
+  digitalWrite(RED_CAR, LOW);
+  digitalWrite(YELLOW_CAR, LOW);
+  digitalWrite(GREEN_CAR, LOW);
+  digitalWrite(RED_PED, LOW);
+  digitalWrite(GREEN_PED, LOW);
+  
+  // Ustawienie diod według aktualnego stanu sygnalizacji
+  switch(currentState) {
+    case CAR_GREEN:
+      // Zielone dla samochodów, czerwone dla pieszych
+      digitalWrite(GREEN_CAR, HIGH);
+      digitalWrite(RED_PED, HIGH);
+      break;
+      
+    case CAR_YELLOW:
+      // Żółte dla samochodów, czerwone dla pieszych
+      digitalWrite(YELLOW_CAR, HIGH);
+      digitalWrite(RED_PED, HIGH);
+      break;
+      
+    case CAR_RED_PED_GREEN:
+      // Czerwone dla samochodów, zielone dla pieszych
+      digitalWrite(RED_CAR, HIGH);
+      digitalWrite(GREEN_PED, HIGH);
+      break;
+      
+    case CAR_RED_PED_BLINK:
+      // Czerwone dla samochodów, migające zielone dla pieszych
+      digitalWrite(RED_CAR, HIGH);
+      if (blinkState) {
+        digitalWrite(GREEN_PED, HIGH);
+      }
+      break;
+      
+    case CAR_RED_PED_RED:
+      // Czerwone dla wszystkich
+      digitalWrite(RED_CAR, HIGH);
+      digitalWrite(RED_PED, HIGH);
+      break;
+      
+    case CAR_RED_YELLOW:
+      // Czerwone+żółte dla samochodów, czerwone dla pieszych (przygotowanie do startu)
+      digitalWrite(RED_CAR, HIGH);
+      digitalWrite(YELLOW_CAR, HIGH);
+      digitalWrite(RED_PED, HIGH);
+      break;
+  }
+}
